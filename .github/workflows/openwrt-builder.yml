@@ -65,10 +65,13 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
     - name: Load custom configuration
       run: |
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
+        # 使用绝对路径判断.config，不存在则直接跳过，不报错
+        if [ -f "${{ github.workspace }}/${CONFIG_FILE}" ]; then
+          mv "${{ github.workspace }}/${CONFIG_FILE}" openwrt/.config
+        fi
+        chmod +x "${{ github.workspace }}/${DIY_P2_SH}"
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        ${{ github.workspace }}/${DIY_P2_SH}
     - name: Download package
       id: package
       run: |
