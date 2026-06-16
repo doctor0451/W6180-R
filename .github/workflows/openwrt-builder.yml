@@ -65,13 +65,15 @@ jobs:
       run: cd openwrt && ./scripts/feeds install -a
     - name: Load custom configuration
       run: |
-        # 使用绝对路径判断.config，不存在则直接跳过，不报错
-        if [ -f "${{ github.workspace }}/${CONFIG_FILE}" ]; then
-          mv "${{ github.workspace }}/${CONFIG_FILE}" openwrt/.config
+        WORKSPACE="$GITHUB_WORKSPACE"
+        # 存在.config才复制，不存在直接跳过不报错
+        if [ -f "$WORKSPACE/.config" ]; then
+          mv "$WORKSPACE/.config" openwrt/.config
         fi
-        chmod +x "${{ github.workspace }}/${DIY_P2_SH}"
+        # 赋予脚本执行权限并运行
+        chmod +x "$WORKSPACE/diy-part2.sh"
         cd openwrt
-        ${{ github.workspace }}/${DIY_P2_SH}
+        "$WORKSPACE/diy-part2.sh"
     - name: Download package
       id: package
       run: |
@@ -119,7 +121,6 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
     - name: Upload firmware to release
       uses: softprops/action-gh-release@master
