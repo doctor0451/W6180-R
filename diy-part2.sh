@@ -1,17 +1,18 @@
 #!/bin/bash
-# ImmortalWrt MT7621 W6180 适配脚本 基于xiaomi_cr6606模板
+# ImmortalWrt MT7621 W6180 适配脚本 基于xiaomi_mi-router-cr6606模板
 # 硬件：MT7621A + MT7905DAN WiFi6 256M DDR3 32MB NOR Flash
 
-# 1. 修复串口波特率 3125000 → 115200 解决TTL乱码
-DTS_FILE=target/linux/ramips/dts/mt7621_xiaomi_cr6606.dts
+# 真实完整DTS文件名（修复缺失mi-router-前缀）
+DTS_FILE=target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr6606.dts
+
+# 1. 修复串口波特率 原生已经115200，保留兼容逻辑
 [ -f $DTS_FILE ] && sed -i 's/3125000/115200/g' $DTS_FILE
 
-# 2. 屏蔽DTS原生复位按键，释放GPIO8给Breed识别
+# 2. 屏蔽DTS原生复位按键（原生GPIO18，释放给W6180 GPIO8 Breed按键）
 [ -f $DTS_FILE ] && sed -i '/reset {/,/};/ s/^/#/' $DTS_FILE
 
-# 3. 修改分区：CR6606 NAND → W6180 32M NOR Flash（关键改动）
-# 替换flash分区布局，适配32MB SPI NOR
-sed -i '/partitions/,/};/c\
+# 3. 替换NAND分区为32MB SPI NOR 匹配Breed分区
+[ -f $DTS_FILE ] && sed -i '/partitions/,/};/c\
 	partitions {\
 		compatible = "fixed-partitions";\
 		#address-cells = <1>;\
@@ -36,20 +37,20 @@ sed -i '/partitions/,/};/c\
 		};\
 	};' $DTS_FILE
 
-# 4. 镜像编译脚本 mt7621.mk 新增W6180设备条目
+# 4. mt7621.mk 新增w6180设备条目
 MK_FILE=target/linux/ramips/image/mt7621.mk
-# 复制CR6606模板，改名为W6180，适配32M NOR
 echo "" >> $MK_FILE
 echo "define Device/w6180" >> $MK_FILE
 echo "  DEVICE_VENDOR := Maiwardi" >> $MK_FILE
 echo "  DEVICE_MODEL := W6180" >> $MK_FILE
-echo "  DEVICE_DTS := mt7621_xiaomi_cr6606" >> $MK_FILE
+# 绑定正确完整DTS文件名
+echo "  DEVICE_DTS := mt7621_xiaomi_mi-router-cr6606" >> $MK_FILE
 echo "  DEVICE_PACKAGES := kmod-mt76-connac mt76da-firmware mtk-wifi-da" >> $MK_FILE
 echo "  IMAGE_SIZE := 32448k" >> $MK_FILE
 echo "endef" >> $MK_FILE
 echo "TARGET_DEVICES += w6180" >> $MK_FILE
 
-# 5. 系统定制：主机名、时区、中文
+# 5. 系统主机名、时区、时间修改
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
