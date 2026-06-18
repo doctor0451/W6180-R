@@ -60,12 +60,13 @@ jobs:
       - name: Load custom configuration
         shell: bash
         run: |
-          if [ -f "$GITHUB_WORKSPACE/.config" ]; then
-            mv "$GITHUB_WORKSPACE/.config" openwrt/.config
+          # 使用相对路径，消除$GITHUB_WORKSPACE软链接冲突
+          if [ -f ./.config ]; then
+            mv ./.config openwrt/.config
           fi
-          chmod +x "$GITHUB_WORKSPACE/diy-part2.sh"
+          chmod +x ./diy-part2.sh
           cd openwrt
-          "$GITHUB_WORKSPACE/diy-part2.sh"
+          ../diy-part2.sh
 
       - name: Download package
         id: package
