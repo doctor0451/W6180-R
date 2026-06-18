@@ -58,6 +58,7 @@ jobs:
         run: cd openwrt && ./scripts/feeds install -a
 
       - name: Load custom configuration
+        shell: bash
         run: |
           if [ -f "$GITHUB_WORKSPACE/.config" ]; then
             mv "$GITHUB_WORKSPACE/.config" openwrt/.config
