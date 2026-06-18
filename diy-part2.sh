@@ -196,4 +196,13 @@ sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
 [ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
 
+# ========== 新增部分：强制开启 MTD 分区拆分支持 ==========
+# 解决内核无法挂载根文件系统的问题（Kernel Panic）
+echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
+echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
+echo "CONFIG_MTD_CMDLINE_PARTS=y" >> .config
+# 重新生成默认配置，确保依赖关系正确
+make defconfig
+# ========== 新增部分结束 ==========
+
 echo "diy-part2.sh 执行完毕。"
