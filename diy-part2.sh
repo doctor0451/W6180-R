@@ -1,25 +1,75 @@
 #!/bin/bash
-# ImmortalWrt MT7621 W6180 适配脚本
-# 硬件：MT7621A + MT7905DAN WiFi6 256M DDR3 32MB SPI NOR
+# 适配 W6180：直接替换 cr6606.dts 为 SPI NOR 配置
 
 DTS_FILE=target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr6606.dts
-DTSI_FILE=target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr660x.dtsi
 MK_FILE=target/linux/ramips/image/mt7621.mk
 
-# 1. 串口波特率兼容修复
-[ -f "$DTS_FILE" ] && sed -i 's/3125000/115200/g' "$DTS_FILE"
+# 1. 用完整 SPI NOR 配置覆盖原 DTS（不再依赖 cr660x.dtsi 中的 NAND）
+cat > "$DTS_FILE" << 'EOF'
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/dts-v1/;
 
-# 2. 修改复位键为 GPIO8（替换原 GPIO18）
-[ -f "$DTSI_FILE" ] && sed -i '/reset {/,/};/ s/gpios = <&gpio 18 GPIO_ACTIVE_LOW>/gpios = <&gpio 8 GPIO_ACTIVE_LOW>/' "$DTSI_FILE"
+#include "mt7621.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 
-# 3. 在 cr6606.dts 末尾追加：禁用 NAND、添加 SPI NOR 及分区
-cat >> "$DTS_FILE" << EOF
+/ {
+	compatible = "xiaomi,mi-router-cr6606", "mediatek,mt7621-soc";
+	model = "Maiwardi W6180";
 
-/* Override for W6180: use SPI NOR instead of NAND */
+	aliases {
+		led-boot = &led_sys_yellow;
+		led-failsafe = &led_sys_yellow;
+		led-running = &led_sys_blue;
+		led-upgrade = &led_sys_yellow;
+		label-mac-device = &gmac0;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led_sys_yellow: sys_yellow {
+			label = "yellow:sys";
+			gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
+		};
+		led_sys_blue: sys_blue {
+			label = "blue:sys";
+			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;
+		};
+		net_yellow {
+			label = "yellow:net";
+			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+		};
+		net_blue {
+			label = "blue:net";
+			gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	keys {
+		compatible = "gpio-keys";
+		reset {
+			label = "reset";
+			gpios = <&gpio 8 GPIO_ACTIVE_LOW>;   /* W6180 实际为 GPIO8 */
+			linux,code = <KEY_RESTART>;
+		};
+		wps {
+			label = "wps";
+			gpios = <&gpio 7 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_WPS_BUTTON>;
+		};
+	};
+};
+
+/* 禁用 NAND */
 &nand {
 	status = "disabled";
 };
 
+/* 启用 SPI NOR 并分区 */
 &spi0 {
 	status = "okay";
 
@@ -38,28 +88,23 @@ cat >> "$DTS_FILE" << EOF
 				reg = <0x000000 0x030000>;
 				read-only;
 			};
-
 			partition@30000 {
 				label = "env";
 				reg = <0x030000 0x010000>;
 			};
-
 			partition@40000 {
 				label = "factory";
 				reg = <0x040000 0x010000>;
 				read-only;
-
 				nvmem-layout {
 					compatible = "fixed-layout";
 					#address-cells = <1>;
 					#size-cells = <1>;
-
-					/* 校准数据位于 factory 开头，保持偏移 0x0 */
+					/* 校准数据起始 */
 					eeprom_factory_0: eeprom@0 {
 						reg = <0x0 0xe00>;
 					};
-
-					/* MAC 地址位置需根据实际情况修改！示例假设在 0x4 和 0x8000 */
+					/* MAC 地址偏移请根据实际 factory 内容调整（示例） */
 					macaddr_factory_0: macaddr@4 {
 						reg = <0x4 0x6>;
 					};
@@ -68,16 +113,15 @@ cat >> "$DTS_FILE" << EOF
 					};
 				};
 			};
-
 			partition@50000 {
 				label = "firmware";
-				reg = <0x050000 0x1fb0000>;
+				reg = <0x050000 0x1fb0000>;   /* 32MB - 0x50000 = 0x1FB0000 */
 			};
 		};
 	};
 };
 
-/* 重新指定 gmac0/1 的 MAC 来源（使用新标签） */
+/* 网卡 MAC 引用 */
 &gmac0 {
 	nvmem-cells = <&macaddr_factory_0>;
 	nvmem-cell-names = "mac-address";
@@ -88,10 +132,55 @@ cat >> "$DTS_FILE" << EOF
 	nvmem-cell-names = "mac-address";
 };
 
-/* pcie1 的 Wi-Fi 仍然使用 eeprom_factory_0（无需改动） */
+/* PCIe Wi-Fi 引用校准数据 */
+&pcie {
+	status = "okay";
+};
+
+&pcie1 {
+	wifi@0,0 {
+		compatible = "mediatek,mt76";
+		reg = <0x0000 0 0 0 0>;
+		nvmem-cells = <&eeprom_factory_0>;
+		nvmem-cell-names = "eeprom";
+		mediatek,disable-radar-background;
+	};
+};
+
+/* 其余外设沿用 mt7621.dtsi 默认 */
+&gmac0 {
+	status = "okay";
+};
+
+&switch0 {
+	ports {
+		port@0 {
+			status = "okay";
+			label = "lan1";
+		};
+		port@1 {
+			status = "okay";
+			label = "lan2";
+		};
+		port@2 {
+			status = "okay";
+			label = "lan3";
+		};
+	};
+};
+
+&state_default {
+	gpio {
+		groups = "jtag", "uart3", "wdt";
+		function = "gpio";
+	};
+};
 EOF
 
-# 4. mt7621.mk 新增 W6180 设备条目（保持与您原有一致）
+# 2. 波特率固定为 115200（原文件已设，此步可略）
+sed -i 's/3125000/115200/g' "$DTS_FILE"
+
+# 3. 在 mt7621.mk 中添加设备（保持不变）
 echo "" >> "$MK_FILE"
 echo "define Device/w6180" >> "$MK_FILE"
 echo "  DEVICE_VENDOR := Maiwardi" >> "$MK_FILE"
@@ -102,10 +191,9 @@ echo "  IMAGE_SIZE := 32448k" >> "$MK_FILE"
 echo "endef" >> "$MK_FILE"
 echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
 
-# 5. 主机名、时区、北京时间
+# 4. 主机名、时区、中文（不变）
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
-
-# 6. LuCI 默认中文界面
-[ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
+[ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
+    sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
