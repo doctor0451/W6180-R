@@ -1,25 +1,14 @@
 #!/bin/bash
 # 适配 W6180：直接替换 cr6606.dts 为 SPI NOR 配置
-# 包含调试和文件检查，便于排查问题
+set -e
+set -x
 
-set -e          # 遇到任何错误立即退出
-set -x          # 打印每条执行的命令（方便查看日志）
-
-# 定义文件路径
 DTS_FILE="target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr6606.dts"
 MK_FILE="target/linux/ramips/image/mt7621.mk"
 
-# 检查必要文件是否存在，若不存在则打印错误并退出
-if [ ! -f "$DTS_FILE" ]; then
-    echo "错误：设备树文件 $DTS_FILE 不存在！"
-    exit 1
-fi
-if [ ! -f "$MK_FILE" ]; then
-    echo "错误：mt7621.mk 文件 $MK_FILE 不存在！"
-    exit 1
-fi
+[ -f "$DTS_FILE" ] || { echo "DTS文件不存在"; exit 1; }
+[ -f "$MK_FILE" ] || { echo "MK文件不存在"; exit 1; }
 
-# 1. 用完整 SPI NOR 配置覆盖原 DTS（不再依赖 cr660x.dtsi 中的 NAND）
 cat > "$DTS_FILE" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
@@ -68,7 +57,7 @@ cat > "$DTS_FILE" << 'EOF'
 		compatible = "gpio-keys";
 		reset {
 			label = "reset";
-			gpios = <&gpio 8 GPIO_ACTIVE_LOW>;   /* W6180 实际为 GPIO8 */
+			gpios = <&gpio 8 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_RESTART>;
 		};
 		wps {
@@ -79,12 +68,10 @@ cat > "$DTS_FILE" << 'EOF'
 	};
 };
 
-/* 禁用 NAND */
 &nand {
 	status = "disabled";
 };
 
-/* 启用 SPI NOR 并分区 */
 &spi0 {
 	status = "okay";
 
@@ -115,11 +102,9 @@ cat > "$DTS_FILE" << 'EOF'
 					compatible = "fixed-layout";
 					#address-cells = <1>;
 					#size-cells = <1>;
-					/* 校准数据起始 */
 					eeprom_factory_0: eeprom@0 {
 						reg = <0x0 0xe00>;
 					};
-					/* MAC 地址偏移请根据实际 factory 内容调整（示例） */
 					macaddr_factory_0: macaddr@4 {
 						reg = <0x4 0x6>;
 					};
@@ -130,13 +115,13 @@ cat > "$DTS_FILE" << 'EOF'
 			};
 			partition@50000 {
 				label = "firmware";
-				reg = <0x050000 0x1fb0000>;   /* 32MB - 0x50000 = 0x1FB0000 */
+				reg = <0x050000 0x1fb0000>;
+				compatible = "openwrt,firmware";   /* 关键修复 */
 			};
 		};
 	};
 };
 
-/* 网卡 MAC 引用 */
 &gmac0 {
 	nvmem-cells = <&macaddr_factory_0>;
 	nvmem-cell-names = "mac-address";
@@ -147,7 +132,6 @@ cat > "$DTS_FILE" << 'EOF'
 	nvmem-cell-names = "mac-address";
 };
 
-/* PCIe Wi-Fi 引用校准数据 */
 &pcie {
 	status = "okay";
 };
@@ -162,7 +146,6 @@ cat > "$DTS_FILE" << 'EOF'
 	};
 };
 
-/* 其余外设沿用 mt7621.dtsi 默认 */
 &gmac0 {
 	status = "okay";
 };
@@ -192,10 +175,8 @@ cat > "$DTS_FILE" << 'EOF'
 };
 EOF
 
-# 2. 确保波特率正确（新 DTS 已为 115200，此命令安全）
 sed -i 's/3125000/115200/g' "$DTS_FILE"
 
-# 3. 在 mt7621.mk 中添加设备条目（若已存在则避免重复）
 if ! grep -q "Device/w6180" "$MK_FILE"; then
     echo "" >> "$MK_FILE"
     echo "define Device/w6180" >> "$MK_FILE"
@@ -206,18 +187,13 @@ if ! grep -q "Device/w6180" "$MK_FILE"; then
     echo "  IMAGE_SIZE := 32448k" >> "$MK_FILE"
     echo "endef" >> "$MK_FILE"
     echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
-else
-    echo "设备 w6180 已在 mt7621.mk 中定义，跳过添加"
 fi
 
-# 4. 主机名、时区、中文
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
 
-# LuCI 默认中文（文件可能存在）
-if [ -f feeds/luci/modules/luci-base/root/etc/config_generate ]; then
+[ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
-fi
 
 echo "diy-part2.sh 执行完毕。"
