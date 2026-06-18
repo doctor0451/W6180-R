@@ -59,13 +59,12 @@ jobs:
 
       - name: Load custom configuration
         run: |
-          WORKSPACE="$GITHUB_WORKSPACE"
-          if [ -f "$WORKSPACE/.config" ]; then
-            mv "$WORKSPACE/.config" openwrt/.config
+          if [ -f "$GITHUB_WORKSPACE/.config" ]; then
+            mv "$GITHUB_WORKSPACE/.config" openwrt/.config
           fi
-          chmod +x "$WORKSPACE/diy-part2.sh"
+          chmod +x "$GITHUB_WORKSPACE/diy-part2.sh"
           cd openwrt
-          "$WORKSPACE/diy-part2.sh"
+          "$GITHUB_WORKSPACE/diy-part2.sh"
 
       - name: Download package
         id: package
