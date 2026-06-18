@@ -1,8 +1,23 @@
 #!/bin/bash
 # 适配 W6180：直接替换 cr6606.dts 为 SPI NOR 配置
+# 包含调试和文件检查，便于排查问题
 
-DTS_FILE=target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr6606.dts
-MK_FILE=target/linux/ramips/image/mt7621.mk
+set -e          # 遇到任何错误立即退出
+set -x          # 打印每条执行的命令（方便查看日志）
+
+# 定义文件路径
+DTS_FILE="target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr6606.dts"
+MK_FILE="target/linux/ramips/image/mt7621.mk"
+
+# 检查必要文件是否存在，若不存在则打印错误并退出
+if [ ! -f "$DTS_FILE" ]; then
+    echo "错误：设备树文件 $DTS_FILE 不存在！"
+    exit 1
+fi
+if [ ! -f "$MK_FILE" ]; then
+    echo "错误：mt7621.mk 文件 $MK_FILE 不存在！"
+    exit 1
+fi
 
 # 1. 用完整 SPI NOR 配置覆盖原 DTS（不再依赖 cr660x.dtsi 中的 NAND）
 cat > "$DTS_FILE" << 'EOF'
@@ -177,23 +192,32 @@ cat > "$DTS_FILE" << 'EOF'
 };
 EOF
 
-# 2. 波特率固定为 115200（原文件已设，此步可略）
+# 2. 确保波特率正确（新 DTS 已为 115200，此命令安全）
 sed -i 's/3125000/115200/g' "$DTS_FILE"
 
-# 3. 在 mt7621.mk 中添加设备（保持不变）
-echo "" >> "$MK_FILE"
-echo "define Device/w6180" >> "$MK_FILE"
-echo "  DEVICE_VENDOR := Maiwardi" >> "$MK_FILE"
-echo "  DEVICE_MODEL := W6180" >> "$MK_FILE"
-echo "  DEVICE_DTS := mt7621_xiaomi_mi-router-cr6606" >> "$MK_FILE"
-echo "  DEVICE_PACKAGES := kmod-mt76-connac mt76da-firmware mtk-wifi-da" >> "$MK_FILE"
-echo "  IMAGE_SIZE := 32448k" >> "$MK_FILE"
-echo "endef" >> "$MK_FILE"
-echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
+# 3. 在 mt7621.mk 中添加设备条目（若已存在则避免重复）
+if ! grep -q "Device/w6180" "$MK_FILE"; then
+    echo "" >> "$MK_FILE"
+    echo "define Device/w6180" >> "$MK_FILE"
+    echo "  DEVICE_VENDOR := Maiwardi" >> "$MK_FILE"
+    echo "  DEVICE_MODEL := W6180" >> "$MK_FILE"
+    echo "  DEVICE_DTS := mt7621_xiaomi_mi-router-cr6606" >> "$MK_FILE"
+    echo "  DEVICE_PACKAGES := kmod-mt76-connac mt76da-firmware mtk-wifi-da" >> "$MK_FILE"
+    echo "  IMAGE_SIZE := 32448k" >> "$MK_FILE"
+    echo "endef" >> "$MK_FILE"
+    echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
+else
+    echo "设备 w6180 已在 mt7621.mk 中定义，跳过添加"
+fi
 
-# 4. 主机名、时区、中文（不变）
+# 4. 主机名、时区、中文
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
-[ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
+
+# LuCI 默认中文（文件可能存在）
+if [ -f feeds/luci/modules/luci-base/root/etc/config_generate ]; then
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
+fi
+
+echo "diy-part2.sh 执行完毕。"
