@@ -19,7 +19,7 @@ jobs:
     permissions:
       actions: write
       contents: write
-      releases: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@main
