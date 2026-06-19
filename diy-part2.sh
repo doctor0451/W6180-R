@@ -192,7 +192,6 @@ if ! grep -q "Device/w6180" "$MK_FILE"; then
 fi
 
 # ========== 3. 修改系统默认配置（时区、主机名等） ==========
-# 修正路径：package/base-files/files/bin/config_generate
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
@@ -200,16 +199,16 @@ sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
 [ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
 
-# ========== 4. 先生成默认 .config，再强制追加 MTD split 选项 ==========
+# ========== 4. 强制启用 MTD split（使用 scripts/config 确保生效） ==========
 make defconfig
 
-# 追加必要的 MTD split 选项（确保它们不被 defconfig 覆盖）
-echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
-echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
-echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
-echo "CONFIG_MTD_BLOCK=y" >> .config
+# 使用 scripts/config 工具强制启用，避免被 defconfig 覆盖
+./scripts/config --enable CONFIG_MTD_SPLIT_SUPPORT \
+                 --enable CONFIG_MTD_SPLIT_FIRMWARE \
+                 --enable CONFIG_MTD_SPLIT_UIMAGE_FW \
+                 --enable CONFIG_MTD_BLOCK
 
-# 处理依赖，让内核确认这些选项有效
+# 处理依赖，非交互模式（自动使用默认值）
 make oldconfig
 
 echo "diy-part2.sh 执行完毕。"
