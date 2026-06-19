@@ -202,23 +202,17 @@ sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
 # ========== 4. 强制启用 MTD split 支持（解决 Kernel Panic） ==========
 make defconfig
 
-# 使用 sed 直接修改 .config，强制启用所需选项
-sed -i 's/^# CONFIG_MTD_SPLIT_SUPPORT is not set/CONFIG_MTD_SPLIT_SUPPORT=y/' .config
-sed -i 's/^CONFIG_MTD_SPLIT_SUPPORT=n/CONFIG_MTD_SPLIT_SUPPORT=y/' .config
-sed -i 's/^# CONFIG_MTD_SPLIT_FIRMWARE is not set/CONFIG_MTD_SPLIT_FIRMWARE=y/' .config
-sed -i 's/^CONFIG_MTD_SPLIT_FIRMWARE=n/CONFIG_MTD_SPLIT_FIRMWARE=y/' .config
-sed -i 's/^# CONFIG_MTD_SPLIT_UIMAGE_FW is not set/CONFIG_MTD_SPLIT_UIMAGE_FW=y/' .config
-sed -i 's/^CONFIG_MTD_SPLIT_UIMAGE_FW=n/CONFIG_MTD_SPLIT_UIMAGE_FW=y/' .config
-sed -i 's/^# CONFIG_MTD_BLOCK is not set/CONFIG_MTD_BLOCK=y/' .config
-sed -i 's/^CONFIG_MTD_BLOCK=n/CONFIG_MTD_BLOCK=y/' .config
+# 删除可能存在的旧定义，然后强制追加正确选项（避免被 defconfig 覆盖）
+sed -i '/CONFIG_MTD_SPLIT_SUPPORT/d' .config
+sed -i '/CONFIG_MTD_SPLIT_FIRMWARE/d' .config
+sed -i '/CONFIG_MTD_SPLIT_UIMAGE_FW/d' .config
+sed -i '/CONFIG_MTD_BLOCK/d' .config
 
-# 确保追加，防止 sed 未匹配
-grep -q "CONFIG_MTD_SPLIT_SUPPORT=y" .config || echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
-grep -q "CONFIG_MTD_SPLIT_FIRMWARE=y" .config || echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
-grep -q "CONFIG_MTD_SPLIT_UIMAGE_FW=y" .config || echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
-grep -q "CONFIG_MTD_BLOCK=y" .config || echo "CONFIG_MTD_BLOCK=y" >> .config
+echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
+echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
+echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
+echo "CONFIG_MTD_BLOCK=y" >> .config
 
-# 处理依赖，自动回答默认（非交互模式）
-yes "" | make oldconfig
+# 不再运行 make oldconfig，避免重置这些选项
 
 echo "diy-part2.sh 执行完毕。"
