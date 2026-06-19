@@ -213,6 +213,7 @@ echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
 echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
 echo "CONFIG_MTD_BLOCK=y" >> .config
 
-# 不再运行 make oldconfig，避免重置这些选项
+# 运行 oldconfig 并自动回答 y，确保新选项被接受
+yes | make oldconfig
 
 echo "diy-part2.sh 执行完毕。"
