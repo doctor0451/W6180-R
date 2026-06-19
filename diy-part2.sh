@@ -200,15 +200,26 @@ sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
 
 # ========== 4. 强制启用 MTD split（使用 scripts/config 确保生效） ==========
+# 生成默认配置
 make defconfig
 
-# 使用 scripts/config 工具强制启用，避免被 defconfig 覆盖
-./scripts/config --enable CONFIG_MTD_SPLIT_SUPPORT \
-                 --enable CONFIG_MTD_SPLIT_FIRMWARE \
-                 --enable CONFIG_MTD_SPLIT_UIMAGE_FW \
-                 --enable CONFIG_MTD_BLOCK
+# 直接修改 .config 文件，强制启用 MTD split 选项
+sed -i 's/^# CONFIG_MTD_SPLIT_SUPPORT is not set/CONFIG_MTD_SPLIT_SUPPORT=y/' .config
+sed -i 's/^CONFIG_MTD_SPLIT_SUPPORT=n/CONFIG_MTD_SPLIT_SUPPORT=y/' .config
+sed -i 's/^# CONFIG_MTD_SPLIT_FIRMWARE is not set/CONFIG_MTD_SPLIT_FIRMWARE=y/' .config
+sed -i 's/^CONFIG_MTD_SPLIT_FIRMWARE=n/CONFIG_MTD_SPLIT_FIRMWARE=y/' .config
+sed -i 's/^# CONFIG_MTD_SPLIT_UIMAGE_FW is not set/CONFIG_MTD_SPLIT_UIMAGE_FW=y/' .config
+sed -i 's/^CONFIG_MTD_SPLIT_UIMAGE_FW=n/CONFIG_MTD_SPLIT_UIMAGE_FW=y/' .config
+sed -i 's/^# CONFIG_MTD_BLOCK is not set/CONFIG_MTD_BLOCK=y/' .config
+sed -i 's/^CONFIG_MTD_BLOCK=n/CONFIG_MTD_BLOCK=y/' .config
 
-# 处理依赖，非交互模式（自动使用默认值）
-make oldconfig
+# 如果上述 sed 没有匹配，则直接追加（但可能重复）
+grep -q "CONFIG_MTD_SPLIT_SUPPORT=y" .config || echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
+grep -q "CONFIG_MTD_SPLIT_FIRMWARE=y" .config || echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
+grep -q "CONFIG_MTD_SPLIT_UIMAGE_FW=y" .config || echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
+grep -q "CONFIG_MTD_BLOCK=y" .config || echo "CONFIG_MTD_BLOCK=y" >> .config
+
+# 运行 oldconfig 处理依赖，使用非交互模式
+yes "" | make oldconfig
 
 echo "diy-part2.sh 执行完毕。"
