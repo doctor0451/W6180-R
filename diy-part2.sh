@@ -1,5 +1,5 @@
 #!/bin/bash
-# 适配 W6180：直接替换 cr6606.dts 为 SPI NOR 配置
+# 适配 W6180：基于小米 CR6606 DTS，修改为 SPI NOR 闪存，调整 LED 和网络端口
 set -e
 set -x
 
@@ -9,6 +9,7 @@ MK_FILE="target/linux/ramips/image/mt7621.mk"
 [ -f "$DTS_FILE" ] || { echo "DTS文件不存在"; exit 1; }
 [ -f "$MK_FILE" ] || { echo "MK文件不存在"; exit 1; }
 
+# ========== 1. 生成适配 W6180 的 DTS ==========
 cat > "$DTS_FILE" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
@@ -22,34 +23,35 @@ cat > "$DTS_FILE" << 'EOF'
 	model = "Maiwardi W6180";
 
 	aliases {
-		led-boot = &led_sys_yellow;
-		led-failsafe = &led_sys_yellow;
-		led-running = &led_sys_blue;
-		led-upgrade = &led_sys_yellow;
+		led-boot = &led_power;
+		led-failsafe = &led_power;
+		led-running = &led_power;
+		led-upgrade = &led_power;
 		label-mac-device = &gmac0;
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,115200n8";
+		bootargs = "console=ttyS0,115200n8 root=/dev/root rootfstype=squashfs,jffs2";
 	};
 
 	leds {
 		compatible = "gpio-leds";
-		led_sys_yellow: sys_yellow {
-			label = "yellow:sys";
-			gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
+
+		led_power: power {
+			label = "power";
+			gpios = <&gpio 14 GPIO_ACTIVE_LOW>;   // 请根据实际硬件修改 GPIO 号
 		};
-		led_sys_blue: sys_blue {
-			label = "blue:sys";
-			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;
+		led_wan: wan {
+			label = "wan";
+			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;    // 请根据实际硬件修改 GPIO 号
 		};
-		net_yellow {
-			label = "yellow:net";
-			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+		led_2g: 2g {
+			label = "2.4g";
+			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;    // 请根据实际硬件修改 GPIO 号
 		};
-		net_blue {
-			label = "blue:net";
-			gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+		led_5g: 5g {
+			label = "5g";
+			gpios = <&gpio 15 GPIO_ACTIVE_LOW>;    // 请根据实际硬件修改 GPIO 号
 		};
 	};
 
@@ -60,11 +62,7 @@ cat > "$DTS_FILE" << 'EOF'
 			gpios = <&gpio 8 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_RESTART>;
 		};
-		wps {
-			label = "wps";
-			gpios = <&gpio 7 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_WPS_BUTTON>;
-		};
+		/* W6180 无独立 WPS 键，移除 */
 	};
 };
 
@@ -116,7 +114,7 @@ cat > "$DTS_FILE" << 'EOF'
 			partition@50000 {
 				label = "firmware";
 				reg = <0x050000 0x1fb0000>;
-				compatible = "openwrt,firmware";   /* 关键修复 */
+				compatible = "openwrt,firmware";
 			};
 		};
 	};
@@ -150,19 +148,23 @@ cat > "$DTS_FILE" << 'EOF'
 	status = "okay";
 };
 
+/* 交换机：1 WAN + 2 LAN */
 &switch0 {
 	ports {
 		port@0 {
 			status = "okay";
-			label = "lan1";
+			label = "wan";
 		};
 		port@1 {
 			status = "okay";
-			label = "lan2";
+			label = "lan1";
 		};
 		port@2 {
 			status = "okay";
-			label = "lan3";
+			label = "lan2";
+		};
+		port@3 {
+			status = "disabled";
 		};
 	};
 };
@@ -175,8 +177,7 @@ cat > "$DTS_FILE" << 'EOF'
 };
 EOF
 
-sed -i 's/3125000/115200/g' "$DTS_FILE"
-
+# ========== 2. 添加设备定义到 mt7621.mk ==========
 if ! grep -q "Device/w6180" "$MK_FILE"; then
     echo "" >> "$MK_FILE"
     echo "define Device/w6180" >> "$MK_FILE"
@@ -189,6 +190,7 @@ if ! grep -q "Device/w6180" "$MK_FILE"; then
     echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
 fi
 
+# ========== 3. 修改系统默认配置（时区、主机名等） ==========
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
@@ -196,13 +198,14 @@ sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
 [ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
 
-# ========== 新增部分：强制开启 MTD 分区拆分支持 ==========
-# 解决内核无法挂载根文件系统的问题（Kernel Panic）
+# ========== 4. 强制启用 MTD split 支持（解决 Kernel Panic） ==========
 echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
 echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
-echo "CONFIG_MTD_CMDLINE_PARTS=y" >> .config
-# 重新生成默认配置，确保依赖关系正确
-make defconfig
-# ========== 新增部分结束 ==========
+echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
+echo "CONFIG_MTD_BLOCK=y" >> .config
+
+# ========== 5. 生成完整且正确的 .config ==========
+make defconfig        # 基于现有 .config 和平台默认配置生成完整配置
+make oldconfig        # 处理新增选项的依赖，确保无冲突
 
 echo "diy-part2.sh 执行完毕。"
