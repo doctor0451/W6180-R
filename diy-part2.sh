@@ -115,6 +115,7 @@ cat > "$DTS_FILE" << 'EOF'
 				label = "firmware";
 				reg = <0x050000 0x1fb0000>;
 				compatible = "openwrt,firmware";
+				linux,rootfs;   // 明确标记为 rootfs，辅助内核识别
 			};
 		};
 	};
@@ -191,6 +192,7 @@ if ! grep -q "Device/w6180" "$MK_FILE"; then
 fi
 
 # ========== 3. 修改系统默认配置（时区、主机名等） ==========
+# 修正路径：package/base-files/files/bin/config_generate
 sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
 sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
 sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
@@ -198,14 +200,16 @@ sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
 [ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
     sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
 
-# ========== 4. 强制启用 MTD split 支持（解决 Kernel Panic） ==========
+# ========== 4. 先生成默认 .config，再强制追加 MTD split 选项 ==========
+make defconfig
+
+# 追加必要的 MTD split 选项（确保它们不被 defconfig 覆盖）
 echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
 echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
 echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
 echo "CONFIG_MTD_BLOCK=y" >> .config
 
-# ========== 5. 生成完整且正确的 .config ==========
-make defconfig        # 基于现有 .config 和平台默认配置生成完整配置
-make oldconfig        # 处理新增选项的依赖，确保无冲突
+# 处理依赖，让内核确认这些选项有效
+make oldconfig
 
 echo "diy-part2.sh 执行完毕。"
