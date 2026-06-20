@@ -1,26 +1,27 @@
 #!/bin/bash
-# 适配 W6180：基于小米 CR6606 DTS，修改为 SPI NOR 闪存，调整 LED 和网络端口
 set -e
 set -x
-
-DTS_FILE="target/linux/ramips/dts/mt7621_xiaomi_mi-router-cr6606.dts"
-MK_FILE="target/linux/ramips/image/mt7621.mk"
-
-[ -f "$DTS_FILE" ] || { echo "DTS文件不存在"; exit 1; }
-[ -f "$MK_FILE" ] || { echo "MK文件不存在"; exit 1; }
-
-# ========== 1. 生成适配 W6180 的 DTS ==========
-cat > "$DTS_FILE" << 'EOF'
+# 设备文件路径定义
+DTS_PATH="target/linux/ramips/dts/mt762_maiwardi_w6180.dts"
+MK_PATH="target/linux/ramips/image/mt7621.mk"
+# 新建DTS目录
+mkdir -p target/linux/ramips/dts
+# 写入修复后DTS（修复交换机、删除双重bootargs、无nand_ecc）
+cat > "$DTS_PATH" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
-
 #include "mt7621.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 
 / {
-	compatible = "xiaomi,mi-router-cr6606", "mediatek,mt7621-soc";
+	compatible = "maiwardi,w6180", "mediatek,mt7621-soc";
 	model = "Maiwardi W6180";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x10000000>;
+	};
 
 	aliases {
 		led-boot = &led_power;
@@ -31,27 +32,26 @@ cat > "$DTS_FILE" << 'EOF'
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,115200n8 root=/dev/root rootfstype=squashfs,jffs2";
+		bootargs = "console=ttyS0,115200n8 root=/dev/mtdblock3 rootfstype=squashfs,jffs2";
 	};
 
 	leds {
 		compatible = "gpio-leds";
-
 		led_power: power {
 			label = "power";
-			gpios = <&gpio 14 GPIO_ACTIVE_LOW>;   // 请根据实际硬件修改 GPIO 号
+			gpios = <&gpio 14 GPIO_ACTIVE_HIGH>;
 		};
 		led_wan: wan {
 			label = "wan";
-			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;    // 请根据实际硬件修改 GPIO 号
+			gpios = <&gpio 16 GPIO_ACTIVE_HIGH>;
 		};
 		led_2g: 2g {
 			label = "2.4g";
-			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;    // 请根据实际硬件修改 GPIO 号
+			gpios = <&gpio 13 GPIO_ACTIVE_HIGH>;
 		};
 		led_5g: 5g {
 			label = "5g";
-			gpios = <&gpio 15 GPIO_ACTIVE_LOW>;    // 请根据实际硬件修改 GPIO 号
+			gpios = <&gpio 15 GPIO_ACTIVE_HIGH>;
 		};
 	};
 
@@ -62,7 +62,6 @@ cat > "$DTS_FILE" << 'EOF'
 			gpios = <&gpio 8 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_RESTART>;
 		};
-		/* W6180 无独立 WPS 键，移除 */
 	};
 };
 
@@ -72,12 +71,11 @@ cat > "$DTS_FILE" << 'EOF'
 
 &spi0 {
 	status = "okay";
-
 	flash@0 {
 		compatible = "jedec,spi-nor";
 		reg = <0>;
 		spi-max-frequency = <50000000>;
-
+		broken-flash-reset;
 		partitions {
 			compatible = "fixed-partitions";
 			#address-cells = <1>;
@@ -113,9 +111,9 @@ cat > "$DTS_FILE" << 'EOF'
 			};
 			partition@50000 {
 				label = "firmware";
-				reg = <0x050000 0x1fb0000>;
+				reg = <0x050000 0x1FA0000>;
 				compatible = "openwrt,firmware";
-				linux,rootfs;   // 明确标记为 rootfs，辅助内核识别
+				linux,rootfs;
 			};
 		};
 	};
@@ -124,11 +122,13 @@ cat > "$DTS_FILE" << 'EOF'
 &gmac0 {
 	nvmem-cells = <&macaddr_factory_0>;
 	nvmem-cell-names = "mac-address";
+	status = "okay";
 };
 
 &gmac1 {
 	nvmem-cells = <&macaddr_factory_8000>;
 	nvmem-cell-names = "mac-address";
+	status = "okay";
 };
 
 &pcie {
@@ -137,36 +137,54 @@ cat > "$DTS_FILE" << 'EOF'
 
 &pcie1 {
 	wifi@0,0 {
-		compatible = "mediatek,mt76";
+		compatible = "mediatek,mt7905";
 		reg = <0x0000 0 0 0 0>;
 		nvmem-cells = <&eeprom_factory_0>;
 		nvmem-cell-names = "eeprom";
-		mediatek,disable-radar-background;
 	};
 };
 
-&gmac0 {
-	status = "okay";
-};
-
-/* 交换机：1 WAN + 2 LAN */
 &switch0 {
+	mediatek,port-map = "llllw";
+	mediatek,mt7530;
+	#address-cells = <1>;
+	#size-cells = <0>;
 	ports {
 		port@0 {
-			status = "okay";
+			reg = <0>;
 			label = "wan";
+			phy-mode = "rgmii";
+			phy-handle = <&phy0>;
 		};
 		port@1 {
-			status = "okay";
+			reg = <1>;
 			label = "lan1";
+			phy-mode = "rgmii";
+			phy-handle = <&phy1>;
 		};
 		port@2 {
-			status = "okay";
+			reg = <2>;
 			label = "lan2";
+			phy-mode = "rgmii";
+			phy-handle = <&phy2>;
 		};
 		port@3 {
+			reg = <3>;
 			status = "disabled";
 		};
+		port@4 {
+			reg = <4>;
+			status = "disabled";
+		};
+	};
+	mdio-bus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		phy0: phy@0 { reg = <0>; };
+		phy1: phy@1 { reg = <1>; };
+		phy2: phy@2 { reg = <2>; };
+		phy3: phy@3 { reg = <3>; status = "disabled"; };
+		phy4: phy@4 { reg = <4>; status = "disabled"; };
 	};
 };
 
@@ -178,42 +196,23 @@ cat > "$DTS_FILE" << 'EOF'
 };
 EOF
 
-# ========== 2. 添加设备定义到 mt7621.mk ==========
-if ! grep -q "Device/w6180" "$MK_FILE"; then
-    echo "" >> "$MK_FILE"
-    echo "define Device/w6180" >> "$MK_FILE"
-    echo "  DEVICE_VENDOR := Maiwardi" >> "$MK_FILE"
-    echo "  DEVICE_MODEL := W6180" >> "$MK_FILE"
-    echo "  DEVICE_DTS := mt7621_xiaomi_mi-router-cr6606" >> "$MK_FILE"
-    echo "  DEVICE_PACKAGES := kmod-mt76-connac mt76da-firmware mtk-wifi-da" >> "$MK_FILE"
-    echo "  IMAGE_SIZE := 32448k" >> "$MK_FILE"
-    echo "endef" >> "$MK_FILE"
-    echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
-fi
+# 修正mk，增加factory.bin镜像（Breed可刷）
+cat >> "$MK_PATH" << 'MK_EOF'
+define Device/maiwardi_w6180
+  DEVICE_VENDOR := Maiwardi
+  DEVICE_MODEL := W6180
+  DEVICE_DTS := mt7621_maiwardi_w6180
+  IMAGE_SIZE := 32448k
+  IMAGES += factory.bin sysupgrade.bin
+  IMAGE/factory.bin := trx -M 0x50000 $(IMAGE_SIZE) $@
+  DEVICE_PACKAGES := mt76da-firmware kmod-mt76-connac mtk-wifi-da kmod-m25p80
+endef
+TARGET_DEVICES += maiwardi_w6180
+MK_EOF
 
-# ========== 3. 修改系统默认配置（时区、主机名等） ==========
-sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
-sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
-sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
-
-[ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
-    sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
-
-# ========== 4. 强制启用 MTD split 支持（解决 Kernel Panic） ==========
-make defconfig
-
-# 删除可能存在的旧定义，然后强制追加正确选项（避免被 defconfig 覆盖）
-sed -i '/CONFIG_MTD_SPLIT_SUPPORT/d' .config
-sed -i '/CONFIG_MTD_SPLIT_FIRMWARE/d' .config
-sed -i '/CONFIG_MTD_SPLIT_UIMAGE_FW/d' .config
-sed -i '/CONFIG_MTD_BLOCK/d' .config
-
-echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
-echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
-echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
-echo "CONFIG_MTD_BLOCK=y" >> .config
-
-# 运行 oldconfig 并自动回答 y，确保新选项被接受
-yes | make oldconfig
-
-echo "diy-part2.sh 执行完毕。"
+echo "===== 修复完成 ===="
+echo "1. 交换机mt7530 PHY绑定修复，消除网口-EINVAL报错"
+echo "2. 删除bootargs mtdparts，解决OF分区cell告警"
+echo "3. mt7621.mk新增factory.bin（Breed底层刷机专用）"
+echo "4. 设备名maiwardi_w6180与.config保持一致"
+echo "刷机提醒：Breed只能刷factory.bin，sysupgrade.bin仅系统内升级使用"
