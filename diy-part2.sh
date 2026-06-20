@@ -179,41 +179,33 @@ cat > "$DTS_FILE" << 'EOF'
 EOF
 
 # ========== 2. 添加设备定义到 mt7621.mk ==========
-if ! grep -q "Device/w6180" "$MK_FILE"; then
-    echo "" >> "$MK_FILE"
-    echo "define Device/w6180" >> "$MK_FILE"
-    echo "  DEVICE_VENDOR := Maiwardi" >> "$MK_FILE"
-    echo "  DEVICE_MODEL := W6180" >> "$MK_FILE"
-    echo "  DEVICE_DTS := mt7621_xiaomi_mi-router-cr6606" >> "$MK_FILE"
-    echo "  DEVICE_PACKAGES := kmod-mt76-connac mt76da-firmware mtk-wifi-da" >> "$MK_FILE"
-    echo "  IMAGE_SIZE := 32448k" >> "$MK_FILE"
-    echo "endef" >> "$MK_FILE"
-    echo "TARGET_DEVICES += w6180" >> "$MK_FILE"
+if [ ! -f "${DTS_FILE}" ]; then
+    echo "ERROR DTS文件写入失败！文件不存在"
+    exit 1
 fi
+echo "DTS文件生成成功: ${DTS_FILE}"
 
-# ========== 3. 修改系统默认配置（时区、主机名等） ==========
-sed -i 's/OpenWrt/W6180-MT7621/g' package/base-files/files/bin/config_generate
-sed -i 's/UTC/CST-8/g' package/base-files/files/bin/config_generate
-sed -i 's/00:00:00/08:00:00/g' package/base-files/files/bin/config_generate
+# 删除可能存在的旧设备定义，避免冲突（确保新规则生效）
+sed -i '/maiwardi_w6180/d' "$MK_FILE"
 
-[ -f feeds/luci/modules/luci-base/root/etc/config_generate ] && \
-    sed -i 's/luci.i18n.en/luci.i18n.zh-cn/g' feeds/luci/modules/luci-base/root/etc/config_generate
+# 追加新设备定义（标准 OpenWrt 格式，非 trx）
+cat >> "${MK_FILE}" << 'MK_EOF'
+define Device/maiwardi_w6180
+  DEVICE_VENDOR := Maiwardi
+  DEVICE_MODEL := W6180
+  DEVICE_DTS := mt7621_maiwardi_w6180
+  IMAGE_SIZE := 32448k
+  IMAGES += factory.bin sysupgrade.bin
+  IMAGE/factory.bin := append-kernel | append-rootfs | pad-rootfs
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  DEVICE_PACKAGES := mt76da-firmware kmod-mt76-connac mtk-wifi-da kmod-m25p80
+endef
+TARGET_DEVICES += maiwardi_w6180
+MK_EOF
 
-# ========== 4. 强制启用 MTD split 支持（解决 Kernel Panic） ==========
-make defconfig
-
-# 删除可能存在的旧定义，然后强制追加正确选项（避免被 defconfig 覆盖）
-sed -i '/CONFIG_MTD_SPLIT_SUPPORT/d' .config
-sed -i '/CONFIG_MTD_SPLIT_FIRMWARE/d' .config
-sed -i '/CONFIG_MTD_SPLIT_UIMAGE_FW/d' .config
-sed -i '/CONFIG_MTD_BLOCK/d' .config
-
-echo "CONFIG_MTD_SPLIT_SUPPORT=y" >> .config
-echo "CONFIG_MTD_SPLIT_FIRMWARE=y" >> .config
-echo "CONFIG_MTD_SPLIT_UIMAGE_FW=y" >> .config
-echo "CONFIG_MTD_BLOCK=y" >> .config
-
-# 运行 oldconfig 并自动回答 y，确保新选项被接受
-yes | make oldconfig
+# 验证定义是否写入成功（方便在编译日志中检查）
+echo "===== mt7621.mk 中 maiwardi_w6180 定义 ====="
+grep -A10 "maiwardi_w6180" "$MK_FILE" || echo "未找到定义！"
+echo "=================== 全部脚本执行完毕 ==================="
 
 echo "diy-part2.sh 执行完毕。"
